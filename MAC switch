@@ -1,0 +1,15 @@
+from pox.core import core
+from pox.lib.packet.ethernet import ethernet from pox.lib.revent import * import pox.openflow.libopenflow_01 as of log = core.getLogger() class LearningSwitch(EventMixin):
+def __init__(self, connection): self.connection = connection self.mac_to_port = {} self.listenTo(connection)
+def _handle_PacketIn(self, event):
+packet = event.parsed self.mac_to_port[packet.src] = event.port # Learn the port for the source MAC log.info("MAC %s seen on %s" % (packet.src, event.port))
+if packet.dst in self.mac_to_port:
+# If the destination MAC address is known, install a flow to avoid packet_in next time log.info("Installing flow...") msg = of.ofp_flow_mod()
+# Set fields to match received packet msg.match = of.ofp_match.from_packet(packet) msg.idle_timeout = 60 msg.hard_timeout = 300 msg.buffer_id = event.ofp.buffer_id
+msg.actions.append(of.ofp_action_output(port = self.mac_to_port[packet.dst])) self.connection.send(msg)
+else:
+# If the destination MAC address is unknown, flood the packet msg = of.ofp_packet_out() msg.actions.append(of.ofp_action_output(port = of.OFPP_FLOOD)) msg.data = event.ofp msg.in_port = event.port self.connection.send(msg)
+def launch():
+def start_switch(event):
+log.info("Starting switch %s" % (event.connection,))
+LearningSwitch(event.connection) core.openflow.addListenerByName("ConnectionUp", start_switch)
